@@ -20,7 +20,9 @@ from typing import Final
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 
+from api.rate_limit import limiter, rate_limit_exceeded_handler
 from api.routes import audit as audit_routes
 from api.routes import auth as auth_routes
 from api.routes import documents as documents_routes
@@ -59,10 +61,10 @@ def create_application() -> FastAPI:
 
     application = FastAPI(
         title=settings.app_name,
-        version="1.0.0",
+        version="2.0.0",
         description=(
             "Multi-tenant enterprise knowledge RAG engine with RBAC-aware "
-            "retrieval and append-only audit logging."
+            "hybrid retrieval, streaming, multi-turn chat, and append-only audit logging."
         ),
         lifespan=lifespan,
         docs_url=None if settings.is_production else "/docs",
@@ -70,6 +72,8 @@ def create_application() -> FastAPI:
         openapi_url=None if settings.is_production else "/openapi.json",
     )
     application.state.settings = settings
+    application.state.limiter = limiter
+    application.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
     application.add_middleware(
         CORSMiddleware,

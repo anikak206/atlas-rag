@@ -627,3 +627,81 @@ class AuditLog(Base):
             f"<AuditLog id={self.id} tenant={self.tenant_id} user={self.user_id} "
             f"latency_ms={self.latency} tokens={self.tokens_used} success={self.success}>"
         )
+
+
+class Conversation(Base, TimestampMixin):
+    """Multi-turn chat conversation per user/tenant."""
+
+    __tablename__ = "conversations"
+    __table_args__ = (
+        Index("ix_conversations_tenant_id_user_id", "tenant_id", "user_id"),
+        Index("ix_conversations_tenant_id_updated_at", "tenant_id", "updated_at"),
+        {"comment": "Multi-turn chat conversations for contextual RAG."},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="New Chat")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+
+    messages: Mapped[list[Message]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="raise",
+    )
+
+
+class Message(Base):
+    """Individual message in a conversation."""
+
+    __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_conversation_id_created_at", "conversation_id", "created_at"),
+        Index("ix_messages_tenant_id_conversation_id", "tenant_id", "conversation_id"),
+        {"comment": "Chat messages with role (user/assistant) and citations."},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # user, assistant, system
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    conversation: Mapped[Conversation] = relationship(back_populates="messages")

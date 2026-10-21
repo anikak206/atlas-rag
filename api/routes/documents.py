@@ -39,6 +39,7 @@ from schemas.documents import (
     DocumentRead,
     IngestResponse,
 )
+from services.advanced_parsing import extract_text_auto
 from services.ingestion import (
     DuplicateDocumentError,
     EmptyDocumentError,
@@ -121,50 +122,61 @@ async def ingest_document(
     "/upload",
     response_model=IngestResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Ingest an uploaded UTF-8 text file",
+    summary="Ingest an uploaded document (PDF, DOCX, PPTX, TXT, JSON, XML)",
 )
 async def upload_document(
     user: CurrentUser,
     session: SessionDep,
-    file: Annotated[UploadFile, File(description="UTF-8 text, JSON or XML file")],
+    file: Annotated[UploadFile, File(description="PDF, DOCX, PPTX, or text file")],
     min_role_required: Annotated[UserRole, Form()] = UserRole.INTERN,
     source_system: Annotated[str | None, Form(max_length=64)] = None,
     title: Annotated[str | None, Form(max_length=1000)] = None,
 ) -> IngestResponse:
     mime = (file.content_type or "text/plain").lower()
-    if not (mime.startswith("text/") or mime in _TEXTISH_MIME_TYPES):
+    fname = (file.filename or "").lower()
+    allowed_ext = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".txt", ".json", ".xml", ".md"}
+    ext_ok = any(fname.endswith(ext) for ext in allowed_ext)
+    textish = mime.startswith("text/") or mime in _TEXTISH_MIME_TYPES or "pdf" in mime or "word" in mime or "officedocument" in mime or "powerpoint" in mime
+    
+    if not (textish or ext_ok):
         raise HTTPException(
             status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            f"Unsupported media type {mime!r}; upload UTF-8 text, JSON or XML",
+            f"Unsupported media type {mime!r}; upload PDF, DOCX, PPTX, or text files",
         )
 
-    # Read one byte past the cap so oversize files are rejected without ever
-    # buffering them fully (each character occupies at least one byte).
-    raw = await file.read(MAX_CONTENT_CHARS + 1)
-    if len(raw) > MAX_CONTENT_CHARS:
+    raw = await file.read(MAX_CONTENT_CHARS * 2 + 1000)  # allow larger binary files
+    if len(raw) > MAX_CONTENT_CHARS * 2 + 1000:
         raise HTTPException(
             status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            f"File exceeds the {MAX_CONTENT_CHARS} character limit",
+            "File exceeds size limit",
         )
+    
     try:
-        content = raw.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
+        content, meta = extract_text_auto(raw, mime, file.filename)
+    except ImportError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Parsing failed: {exc}") from exc
+    
+    if len(content) > MAX_CONTENT_CHARS:
         raise HTTPException(
-            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            "File is not valid UTF-8 text",
-        ) from exc
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"Extracted text exceeds the {MAX_CONTENT_CHARS} character limit",
+        )
+    
+    if not content.strip():
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Uploaded file contains no extractable text"
+        )
 
     payload = DocumentIngestRequest(
         title=((title or file.filename or "").strip()[:1000] or "Untitled upload"),
         content=content,
         min_role_required=min_role_required,
         source_system=source_system,
-        mime_type=mime,
+        mime_type=mime or meta.get("format"),
+        metadata=meta,
     )
-    if not payload.content.strip():
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "Uploaded file is empty"
-        )
     return await _run_ingestion(session, user, payload)
 
 
