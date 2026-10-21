@@ -1,0 +1,35 @@
+# Tooling configuration only: runtime dependencies live in requirements.txt, and
+# the application is a flat-module service (no distributable package), so no
+# [project] table is required.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+# Migration revisions are historical artifacts; reformatting them would create
+# noisy diffs against the deployed schema history.
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+# Keep ruff's full default selection (pycodestyle, Pyflakes, import sorting,
+# pyupgrade, RUF). Rules are fixed, not silenced.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+asyncio_mode = "auto"
+# pytest-asyncio 0.26 still calls the deprecated asyncio policy API on 3.14;
+# the warning is the plugin's, not this project's, and is tracked upstream.
+filterwarnings = [
+    "ignore:'asyncio.get_event_loop_policy' is deprecated:DeprecationWarning",
+    "ignore:'asyncio.set_event_loop_policy' is deprecated:DeprecationWarning",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = true
+ignore_missing_imports = true
+exclude = ["alembic/versions"]
