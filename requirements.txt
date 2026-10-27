@@ -1,51 +1,47 @@
-# ---------------------------------------------------------------------------
-# Multi-Tenant Enterprise Knowledge RAG Engine - runtime dependencies
-# Python >= 3.11 (StrEnum, modern typing) | target: PostgreSQL 14+ with pgvector >= 0.5
-# ---------------------------------------------------------------------------
+# Runtime dependencies for the RAG engine (Python 3.11+).
+#
+# This file is intentionally curated rather than a full `pip freeze`: it lists
+# only direct dependencies, pinned to versions whose transitive constraints are
+# known to be mutually compatible. Re-freeze into a lockfile (pip-tools/uv) if
+# you need byte-for-byte reproducibility.
+#
+# Dev-only tooling lives in requirements-dev.txt.
 
-# --- Web layer ---
-fastapi>=0.115,<1.0
-uvicorn[standard]>=0.32,<1.0
+# --- Web framework ---
+fastapi==0.115.0
+starlette==0.38.6
+uvicorn[standard]==0.31.0
+python-multipart==0.0.12
+slowapi==0.1.9
 
-# --- ORM / migrations ---
-sqlalchemy[asyncio]>=2.0.36,<3.0
-alembic>=1.14,<2.0
+# --- Configuration / validation ---
+pydantic[email]==2.9.2
+pydantic-settings==2.5.2
 
-# --- PostgreSQL drivers ---
-# asyncpg  -> runtime async engine (database.py)
-# psycopg2 -> sync driver used by Alembic migrations and ops scripts
-asyncpg>=0.30,<1.0
-psycopg2-binary>=2.9.10,<3.0
+# --- Persistence ---
+SQLAlchemy==2.0.35
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+greenlet==3.1.1
+alembic==1.13.2
+pgvector==0.3.5
 
-# --- pgvector ---
-# Supplies the SQLAlchemy `Vector` column type and the distance operators
-# required for HNSW/IVFFlat indexes over the `embedding` column.
-pgvector>=0.3.6,<1.0
-
-# --- Settings / validation ---
-pydantic>=2.10,<3.0
-pydantic-settings>=2.7,<3.0
+# --- Auth ---
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.0
 
 # --- RAG stack ---
-# llama-index powers ingestion (loaders/splitters), embedding and query engines.
-# NOTE: vector search itself uses native SQLAlchemy pgvector queries (see
-# services/retrieval.py) rather than llama-index's pgvector vector-store
-# integration, because the RBAC min_role_required filter and RLS tenant scope
-# must be expressed in the SQL statement itself.
-llama-index>=0.12,<1.0
+llama-index-core==0.11.17
+llama-index-embeddings-openai==0.2.5
+llama-index-llms-openai==0.2.10
 
-# --- Auth layer (JWT issuance + password hashing for the RBAC API) ---
-python-jose[cryptography]>=3.3,<4.0
-bcrypt>=4.2,<6.0
+# --- Document parsing (PDF / DOCX / PPTX) ---
+PyMuPDF==1.24.11
+python-docx==1.1.2
+python-pptx==1.0.2
 
-# --- HTTP form/file parsing (multipart document upload endpoint) ---
-python-multipart>=0.0.12,<1.0
+# --- Async ingestion ---
+celery[redis]==5.4.0
 
-# ---------------------------------------------------------------------------
-# Development / CI
-# ---------------------------------------------------------------------------
-pytest>=8.3,<9.0
-pytest-asyncio>=0.25,<1.0
-httpx>=0.28,<1.0
-ruff>=0.9,<1.0
-mypy>=1.14,<2.0
+# --- HTTP client (web-search fallback, tests) ---
+httpx==0.27.2

@@ -36,6 +36,14 @@ class QueryRequest(BaseModel):
         default=True,
         description="Return the supporting chunks alongside the answer",
     )
+    agentic: bool = Field(
+        default=False,
+        description=(
+            "Enable multi-hop answering: the question is decomposed into "
+            "sub-questions and a low-confidence result falls back to web search "
+            "(requires TAVILY_API_KEY for the external fallback)."
+        ),
+    )
 
     @field_validator("question")
     @classmethod
@@ -90,6 +98,24 @@ class QueryResponse(BaseModel):
     request_id: UUID
     audit_id: int | None = Field(default=None, ge=0)
     generated_at: datetime
+    source_type: str | None = Field(
+        default=None,
+        description="'internal' or 'web_fallback' when the request was agentic",
+    )
+    confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Best retrieval similarity score (agentic requests only)",
+    )
+    sub_questions: list[str] | None = Field(
+        default=None,
+        description="Decomposed sub-questions, when decomposition was applied",
+    )
+    web_sources: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="External results used by the web fallback (no document chunks)",
+    )
 
 
 class AuditRead(BaseModel):

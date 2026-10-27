@@ -26,9 +26,15 @@ from api.rate_limit import limiter, rate_limit_exceeded_handler
 from api.routes import audit as audit_routes
 from api.routes import auth as auth_routes
 from api.routes import documents as documents_routes
+from api.routes import documents_async as documents_async_routes
 from api.routes import query as query_routes
 from config import Settings, get_settings
 from database import REQUEST_ID_CTX, check_connection, dispose_engine, init_database
+from services.background_worker import (
+    ingestion_queue,
+    start_inline_worker_if_needed,
+    stop_inline_worker,
+)
 
 logger: Final[logging.Logger] = logging.getLogger(__name__)
 
@@ -48,9 +54,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except RuntimeError:
         logger.critical("Startup aborted: database unavailable", exc_info=True)
         raise
+    if await start_inline_worker_if_needed():
+        logger.info(
+            "CELERY_BROKER_URL is unset; using the in-process ingestion queue"
+        )
     try:
         yield
     finally:
+        if ingestion_queue.running:
+            await stop_inline_worker()
         await dispose_engine()
         logger.info("Shutdown complete")
 
@@ -107,6 +119,7 @@ def create_application() -> FastAPI:
     api_prefix = settings.api_prefix
     application.include_router(auth_routes.router, prefix=api_prefix)
     application.include_router(documents_routes.router, prefix=api_prefix)
+    application.include_router(documents_async_routes.router, prefix=api_prefix)
     application.include_router(query_routes.router, prefix=api_prefix)
     application.include_router(audit_routes.router, prefix=api_prefix)
 

@@ -1,0 +1,42 @@
+[
+  {
+    "id": 1,
+    "title": "Employee Leave Policy",
+    "question": "What is the leave policy for full-time employees?",
+    "answer": "Full-time employees receive 24 days of paid annual leave per year.",
+    "chunk_text": "Employee Leave Policy. Full-time employees receive 24 days of paid annual leave per calendar year, accrued monthly. Leave requests longer than five consecutive days require manager approval, and up to five unused days may be carried into the next calendar year.",
+    "relevant_chunks": ["24 days", "paid annual leave", "full-time"]
+  },
+  {
+    "id": 2,
+    "title": "FY2026 Operating Budget",
+    "question": "What is the FY2026 operating budget?",
+    "answer": "The FY2026 operating budget totals 48.2 million USD.",
+    "chunk_text": "FY2026 Operating Budget. The FY2026 operating budget totals 48.2 million USD, a 6 percent increase over the prior year. Engineering receives the largest allocation, followed by sales and customer support, and capital expenditure is capped at 4.1 million USD.",
+    "relevant_chunks": ["48.2 million", "operating budget", "FY2026"]
+  },
+  {
+    "id": 3,
+    "title": "Access Control Model",
+    "question": "How are access permissions determined?",
+    "answer": "Access permissions are determined by RBAC roles and document min_role_required settings.",
+    "chunk_text": "Access Control Model. Access permissions are determined by RBAC roles combined with each document's min_role_required setting. The roles are Intern, Finance and Admin, ordered from least to most privileged. A user may only retrieve chunks whose min_role_required is at or below their own role.",
+    "relevant_chunks": ["RBAC roles", "min_role_required", "permissions"]
+  },
+  {
+    "id": 4,
+    "title": "Multi-Tenant Isolation",
+    "question": "What is multi-tenant isolation?",
+    "answer": "Multi-tenant isolation ensures data separation between different tenants using tenant_id filters.",
+    "chunk_text": "Multi-Tenant Isolation. Multi-tenant isolation guarantees data separation between different tenants. Every tenant-scoped row carries a tenant_id, and PostgreSQL row level security enforces a tenant_id filter on every query so that one tenant can never observe another tenant's documents, chunks or audit records.",
+    "relevant_chunks": ["tenant_id", "isolation", "row level security"]
+  },
+  {
+    "id": 5,
+    "title": "Retrieval Architecture",
+    "question": "What search methods are used?",
+    "answer": "The system uses hybrid search combining dense vector search and sparse keyword search with RRF reranking.",
+    "chunk_text": "Retrieval Architecture. The system uses hybrid search that combines dense vector search over pgvector embeddings with sparse keyword search over PostgreSQL full-text indexes. The two ranked lists are fused with Reciprocal Rank Fusion (RRF, k = 60) before role-based filtering, which improves recall for exact identifiers that embeddings alone handle poorly.",
+    "relevant_chunks": ["hybrid search", "vector search", "RRF", "sparse"]
+  }
+]

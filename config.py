@@ -154,6 +154,17 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # External web search (agentic fallback)
+    # ------------------------------------------------------------------
+    tavily_api_key: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Tavily API key enabling the agentic web-search fallback. When unset, "
+            "a low-confidence query reports that external search is not configured."
+        ),
+    )
+
+    # ------------------------------------------------------------------
     # Audit logging
     # ------------------------------------------------------------------
     audit_enabled: bool = True

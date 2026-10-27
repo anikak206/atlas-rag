@@ -9,6 +9,7 @@ half-indexed document survives an error.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import UTC, datetime
 from typing import Annotated, Final
@@ -33,13 +34,11 @@ from models import Document, DocumentStatus, User, UserRole
 from rbac import accessible_min_roles
 from schemas.common import Page
 from schemas.documents import (
-    MAX_CONTENT_CHARS,
     DeleteResponse,
     DocumentIngestRequest,
     DocumentRead,
     IngestResponse,
 )
-from services.advanced_parsing import extract_text_auto
 from services.ingestion import (
     DuplicateDocumentError,
     EmptyDocumentError,
@@ -48,15 +47,18 @@ from services.ingestion import (
     ingest_text,
 )
 from services.providers import ProviderConfigurationError
+from services.uploads import (
+    MAX_UPLOAD_BYTES,
+    MissingParserError,
+    UnsupportedUploadError,
+    UploadRejectedError,
+    UploadTooLargeError,
+    extract_upload,
+)
 
 logger: Final[logging.Logger] = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-#: Non-``text/*`` uploads still accepted by the text-oriented ingest pipeline.
-_TEXTISH_MIME_TYPES: Final[frozenset[str]] = frozenset(
-    {"application/json", "application/xml", "application/xhtml+xml"}
-)
 
 
 def _visible_to(user: User) -> ColumnElement[bool]:
@@ -132,50 +134,35 @@ async def upload_document(
     source_system: Annotated[str | None, Form(max_length=64)] = None,
     title: Annotated[str | None, Form(max_length=1000)] = None,
 ) -> IngestResponse:
-    mime = (file.content_type or "text/plain").lower()
-    fname = (file.filename or "").lower()
-    allowed_ext = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".txt", ".json", ".xml", ".md"}
-    ext_ok = any(fname.endswith(ext) for ext in allowed_ext)
-    textish = mime.startswith("text/") or mime in _TEXTISH_MIME_TYPES or "pdf" in mime or "word" in mime or "officedocument" in mime or "powerpoint" in mime
-    
-    if not (textish or ext_ok):
-        raise HTTPException(
-            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            f"Unsupported media type {mime!r}; upload PDF, DOCX, PPTX, or text files",
-        )
-
-    raw = await file.read(MAX_CONTENT_CHARS * 2 + 1000)  # allow larger binary files
-    if len(raw) > MAX_CONTENT_CHARS * 2 + 1000:
-        raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            "File exceeds size limit",
-        )
-    
+    raw = await file.read(MAX_UPLOAD_BYTES + 1)
     try:
-        content, meta = extract_text_auto(raw, mime, file.filename)
-    except ImportError as exc:
+        if len(raw) > MAX_UPLOAD_BYTES:
+            raise UploadTooLargeError("File exceeds size limit")
+        upload = await asyncio.to_thread(
+            extract_upload, raw, file.content_type, file.filename, title=title
+        )
+    except MissingParserError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Parsing failed: {exc}") from exc
-    
-    if len(content) > MAX_CONTENT_CHARS:
+    except UnsupportedUploadError as exc:
         raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            f"Extracted text exceeds the {MAX_CONTENT_CHARS} character limit",
-        )
-    
-    if not content.strip():
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, str(exc)
+        ) from exc
+    except UploadTooLargeError as exc:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY, "Uploaded file contains no extractable text"
-        )
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, str(exc)
+        ) from exc
+    except UploadRejectedError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)
+        ) from exc
 
     payload = DocumentIngestRequest(
-        title=((title or file.filename or "").strip()[:1000] or "Untitled upload"),
-        content=content,
+        title=upload.title,
+        content=upload.content,
         min_role_required=min_role_required,
         source_system=source_system,
-        mime_type=mime or meta.get("format"),
-        metadata=meta,
+        mime_type=upload.mime_type,
+        metadata=upload.metadata,
     )
     return await _run_ingestion(session, user, payload)
 
